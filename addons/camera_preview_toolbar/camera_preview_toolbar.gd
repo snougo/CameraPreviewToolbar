@@ -125,21 +125,40 @@ func _find_node_recursive(p_node: Node, p_text_match: String, p_class_match: Str
 	return null
 
 
-## 在场景中递归寻找第一个 Camera3D 节点
+## 在场景中寻找用于预览的目标 Camera3D 节点
+## 逻辑：
+## 1. 优先寻找 current = true 的相机，如果有多个，取最后一个。
+## 2. 如果没有 current = true 的相机，取场景中最后一个 Camera3D。
 ## [param p_root]: 搜索起始节点
 func _find_camera_recursive(p_root: Node) -> Camera3D:
-	if not p_root:
+	var all_cameras: Array[Camera3D] = []
+	_collect_cameras_recursive(p_root, all_cameras)
+	
+	if all_cameras.is_empty():
 		return null
 	
-	if p_root is Camera3D:
-		return p_root
+	# 倒序查找第一个 current 为 true 的相机
+	for i in range(all_cameras.size() - 1, -1, -1):
+		var cam: Camera3D = all_cameras[i]
+		if cam.current:
+			return cam
+			
+	# 如果没有 current 相机，返回列表中的最后一个
+	return all_cameras.back()
+
+
+## 递归收集所有 Camera3D 节点到数组中
+## [param p_node]: 当前遍历节点
+## [param p_result]: 结果数组
+func _collect_cameras_recursive(p_node: Node, p_result: Array[Camera3D]) -> void:
+	if not p_node:
+		return
+
+	if p_node is Camera3D:
+		p_result.append(p_node)
 	
-	for child in p_root.get_children():
-		var result: Camera3D = _find_camera_recursive(child)
-		if result:
-			return result
-	
-	return null
+	for child in p_node.get_children():
+		_collect_cameras_recursive(child, p_result)
 
 
 # --- Signal Callbacks ---
