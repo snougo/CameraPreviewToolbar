@@ -75,18 +75,53 @@ func _toggle_preview_mode(p_is_active: bool) -> void:
 			# 如果原本就选中了相机，就不需要恢复
 			_previous_selection.clear()
 		
-		# 3. 必须等待一帧，让编辑器 UI 刷新出原生的 "Preview" 复选框
-		await get_tree().process_frame
+		# 3. 等待原生 UI 就绪 (关键修复)
+		# 循环检查直到原生 Preview 复选框变得可见且可用，或者超时
+		var native_checkbox: CheckBox = null
+		var max_retries: int = 20 # 最大等待约 20 帧
 		
-		# 4. 找到并勾选原生的预览框
-		var native_checkbox: CheckBox = _find_native_preview_checkbox()
-		if native_checkbox and not native_checkbox.button_pressed:
-			native_checkbox.button_pressed = true
+		for i in range(max_retries):
+			await get_tree().process_frame
+			
+			# 每次等待后都要检查相机是否依然有效
+			if not is_instance_valid(_target_camera):
+				_toolbar_button.set_pressed_no_signal(false)
+				return
+				
+			# 确保选区依然正确 (防止在此期间用户点击了其他东西)
+			var current_sel = selection.get_selected_nodes()
+			if current_sel.size() != 1 or current_sel[0] != _target_camera:
+				selection.clear()
+				selection.add_node(_target_camera)
+			
+			# 尝试寻找并验证复选框状态
+			native_checkbox = _find_native_preview_checkbox()
+			if native_checkbox and native_checkbox.is_visible_in_tree() and not native_checkbox.disabled:
+				break # 找到了并且可用！
+			
+			native_checkbox = null # 还没准备好，继续等待
+		
+		# 4. 执行勾选
+		if native_checkbox:
+			if not native_checkbox.button_pressed:
+				native_checkbox.button_pressed = true
+		else:
+			push_warning("Camera Preview Toolbar: 无法激活预览，原生预览控件未就绪或被隐藏。")
+			# 恢复按钮状态，但尽量不报错
+			_toolbar_button.set_pressed_no_signal(false)
+			# 如果之前是因为我们的操作切换了选区，尝试恢复
+			if not _previous_selection.is_empty():
+				selection.clear()
+				for node in _previous_selection:
+					if is_instance_valid(node):
+						selection.add_node(node)
+				_previous_selection.clear()
 	
 	else:
 		# --- 关闭预览模式 ---
 		
 		# 1. 找到并取消勾选原生的预览框
+		# 关闭时通常不需要等待太久，因为 UI 应该是存在的
 		var native_checkbox: CheckBox = _find_native_preview_checkbox()
 		if native_checkbox and native_checkbox.button_pressed:
 			native_checkbox.button_pressed = false
