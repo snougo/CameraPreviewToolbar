@@ -113,6 +113,9 @@ func _wait_and_activate_native_preview(selection: EditorSelection) -> void:
 	if native_checkbox:
 		if not native_checkbox.button_pressed:
 			native_checkbox.button_pressed = true
+		# 监听原生 checkbox 状态变化，自动同步插件按钮的弹起状态
+		if not native_checkbox.toggled.is_connected(_on_native_preview_toggled):
+			native_checkbox.toggled.connect(_on_native_preview_toggled)
 	else:
 		push_warning("Camera Preview Toolbar: 原生预览控件未就绪。")
 		_toolbar_button.set_pressed_no_signal(false)
@@ -134,22 +137,44 @@ func _find_node_recursive(p_node: Node, p_text_match: String, p_class_match: Str
 
 # 查找场景中的主相机 (current=true 优先，否则取末尾)
 func _find_target_camera(p_root: Node) -> Camera3D:
-	if not p_root: return null
-	# 使用 find_children 确保搜索包含子场景
-	var nodes: Array[Node] = p_root.find_children("*", "Camera3D", true, false)
-	var all_cameras: Array[Camera3D] = []
+	if not p_root:
+		return null
 	
-	if p_root is Camera3D: all_cameras.append(p_root)
-	for node in nodes: if node is Camera3D: all_cameras.append(node)
+	# 优先找 current = true 的相机
+	var result: Camera3D = _find_current_camera_recursive(p_root)
+	if result:
+		return result
 	
-	if all_cameras.is_empty(): return null
-	
-	# 倒序找 current = true
-	for i in range(all_cameras.size() - 1, -1, -1):
-		if all_cameras[i].current: return all_cameras[i]
-		
-	return all_cameras.back()
+	# 没找到 current=true 的，退而求其次返回第一个 Camera3D
+	return _find_any_camera_recursive(p_root)
+
+
+# 递归查找 current=true 的 Camera3D
+func _find_current_camera_recursive(p_node: Node) -> Camera3D:
+	if p_node is Camera3D and p_node.current:
+		return p_node
+	for child in p_node.get_children():
+		var result: Camera3D = _find_current_camera_recursive(child)
+		if result:
+			return result
+	return null
+
+
+# 递归查找任意 Camera3D（兜底）
+func _find_any_camera_recursive(p_node: Node) -> Camera3D:
+	if p_node is Camera3D:
+		return p_node
+	for child in p_node.get_children():
+		var result: Camera3D = _find_any_camera_recursive(child)
+		if result:
+			return result
+	return null
 
 
 func _on_toolbar_button_toggled(p_is_toggled_on: bool) -> void:
 	_toggle_preview_mode(p_is_toggled_on)
+
+
+func _on_native_preview_toggled(p_pressed: bool) -> void:
+	if not p_pressed and _toolbar_button.button_pressed:
+		_toolbar_button.set_pressed_no_signal(false)
